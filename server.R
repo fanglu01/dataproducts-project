@@ -14,7 +14,7 @@ shinyServer(function(input, output) {
                  confLevel=input$conf_level * 0.01,
                  minimumPoints=input$min_points,
                  windowSize=input$window_size,
-                 title=plus@time
+                 title=file
         )
     })
 })

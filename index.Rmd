@@ -1,0 +1,40 @@
+---
+title       : Segment Detection in Nike+ Pedometer Run Data
+subtitle    : Final project for Developing Data Products
+author      : Rick Osborne
+job         : rickosborne.org
+framework   : io2012        # {io2012, html5slides, shower, dzslides, ...}
+highlighter : highlight.js  # {highlight.js, prettify, highlight}
+hitheme     : solarized_light      # 
+widgets     : []            # {mathjax, quiz, bootstrap}
+mode        : selfcontained # {standalone, draft}
+knit        : slidify::knit2slides
+--- .hbottom
+
+# I am _not_ that smooth.
+
+When Nike+ tells me how fast I'm going it looks like this:
+
+![Nike+ Run Data](assets/img/nike-chart.png)
+
+---
+
+# But I _can_ read XML data ...
+
+```{r}
+source('nikeplus.R')
+plus <- read.nikePlus(file.path('xml', '2007-07-11 20;59;57.xml'))
+head(plus@intervals[,c("distanceKM","durationMin","diffKM","speedKPH")])
+```
+
+---
+
+# I can use linear models to find breakpoints.
+
+```{r, fig.width=14}
+plotNike(plus@intervals, minimumPoints=5, windowSize=7, title=plus@time)
+```
+
+--- .solo
+
+# [ricko.is/shiny](http://ricko.is/shiny)

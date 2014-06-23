@@ -2,10 +2,12 @@
 
 # install.packages("XML")
 library(XML)
+library(shiny)
 XML_DIR <- "xml"
 # time goal "2009-01-26 19;59;38.xml"
-XML_PATH <- file.path(XML_DIR, "2007-01-31 18;54;51.xml")
-data <- xmlToList(xmlParse(XML_PATH))
+# "2007-07-19 20;14;01.xml" "2007-07-11 20;59;57.xml"
+# XML_PATH <- file.path(XML_DIR, "2007-07-19 20;14;01.xml")
+# data <- xmlToList(xmlParse(XML_PATH))
 
 setClass("nikePlus", representation(
     durationMS = "numeric",
@@ -102,15 +104,81 @@ setMethod("read.nikePlus", "character", function(.Object) {
     np
 })
 
-plus <- read.nikePlus(XML_PATH)
-#tail(plus@intervals)
-
-all <- data.frame()
-files <- dir(XML_DIR, "*.xml")
-for (f in files) {
-    print(f)
-    plus <- read.nikePlus(file.path(XML_DIR, f))
-    if (nrow(plus@intervals) > 3) all <- rbind(all, plus@intervals)
+readAllXml <- function() {
+    all <- data.frame()
+    files <- dir(XML_DIR, "*.xml")
+    for (f in files) {
+        print(f)
+        plus <- read.nikePlus(file.path(XML_DIR, f))
+        if (nrow(plus@intervals) > 3) all <- rbind(all, plus@intervals)
+    }
+    
+    write.table(all, "all-data.txt", sep="\t")
 }
 
-write.table(all, "all-data.txt", sep="\t")
+#plus <- read.nikePlus(XML_PATH)
+#tail(plus@intervals)
+
+plotNike <- function(data, windowSize=7, confLevel=0.95, minimumPoints=2, title=NULL, method="lm") {
+    int <- subset(data, speedKPH > 0, c("speedKPH","time"))
+    speedTimeCols <- c("speedKPH","segmentNum","outlier","time")
+    int$outlier <- rep(FALSE, nrow(int))
+    int$segmentNum <- rep(NA, nrow(int))
+    segmentNum <- 1
+    int[1:windowSize, "segmentNum"] <- segmentNum
+    all <- seq(from=windowSize + 1, to=nrow(int) - windowSize)
+    for (i in all) {
+        timeI <- int[i, "time"]
+        speedI <- int[i, "speedKPH"]
+        prevSegment <- int[i - 1, "segmentNum"]
+        beforeI <- subset(int[seq(from=i - windowSize, to=i - 1),], segmentNum==prevSegment & outlier==FALSE)
+        # print(data.frame(i=i,prevSegment=prevSegment,nrow=nrow(beforeI)))
+        if (nrow(beforeI) >= minimumPoints) {
+            afterI <- int[seq(from=i + 1, to=windowSize + i),]
+            lmBoth <- lm(speedKPH ~ time, data=rbind(beforeI,afterI))
+            ciBoth <- suppressWarnings(as.vector(confint(lmBoth, "(Intercept)", confLevel)))
+            if (speedI >= ciBoth[1] & speedI <= ciBoth[2]) {
+                lmBefore <- lm(speedKPH ~ time, data=beforeI)
+                lmAfter <- lm(speedKPH ~ time, data=afterI)
+                ciBefore <- suppressWarnings(as.vector(confint(lmBefore, "(Intercept)", confLevel)))
+                ciAfter <- suppressWarnings(as.vector(confint(lmAfter, "(Intercept)", confLevel)))
+                if (!((ciBefore[2] >= ciAfter[1] & ciBefore[2] <= ciAfter[2]) | (ciAfter[1] >= ciBefore[1] & ciAfter[1] <= ciBefore[2]))) {
+                    segmentNum <- segmentNum + 1
+                }
+            }
+            else {
+                int[i, "outlier"] <- TRUE
+            }
+        }
+        int[i, "segmentNum"] <- segmentNum
+    }
+    int[seq(nrow(int)-windowSize, nrow(int)), "segmentNum"] <- segmentNum
+    plot(int$speedKPH ~ int$time, col="steelblue", pch=".", xlab="Wall Clock Time", ylab="Speed (km/h)")
+    segments <- aggregate(cbind(end=time) ~ segmentNum, data=int, FUN=max, na.rm=TRUE)
+    segments$end < as.POSIXct(segments$end, origin="1970-01-01")
+    segments$start <- as.POSIXct(aggregate(time ~ segmentNum, data=int, FUN=min, na.rm=TRUE)$time, origin="1970-01-01")
+    for (i in segments$segmentNum) {
+        segment <- subset(int, segmentNum == i)
+        model <- suppressWarnings(lm(speedKPH ~ time, data=segment, method=method))
+        startTime <- segments$start[i]
+        endTime <- segments$end[i]
+        kph <- suppressWarnings(predict(model, data.frame(time=c(startTime,endTime))))
+        lines(c(startTime,endTime), kph, col="red", lwd=3)
+    }
+    if (!is.null(title)) {
+        title(title)
+    }
+}
+
+#files <- c("2007-07-09 21;39;48.xml", "2007-07-11 20;59;57.xml", "2007-07-13 20;38;01.xml", "2007-07-19 20;14;01.xml")
+#files <- c("2007-07-09 21;39;48.xml")
+#par(mfrow=c(2,2))
+#par(mfrow=c(1,1))
+#for (file in files) {
+#    plus <- read.nikePlus(file.path(XML_DIR, file))
+#    plotNike(plus@intervals, confLevel=0.95, minimumPoints=6, windowSize=9, title=plus@time)
+#}
+
+#plus <- read.nikePlus(file.path(XML_DIR, file))
+#plotNike(plus@intervals, confLevel=0.95, minimumPoints=6, windowSize=9, title=plus@time, method="treebag")
+
